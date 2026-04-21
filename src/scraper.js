@@ -336,6 +336,17 @@ async function checkAvailability(pincode) {
               const tags = Array.isArray(p.tags)
                 ? p.tags.map((t) => ((t.title || t) + "").toLowerCase())
                 : [];
+
+              // Calculate USP (Price per Unit) manually if not provided
+              const priceVal = Number(p.price) || Number(p.mrp) || 0;
+              const weightVal = Number(p.metafields?.weight) || 0;
+              let finalUsp = Number(p.usp) || 0;
+              if (!finalUsp && priceVal > 0 && weightVal > 0) {
+                finalUsp = priceVal / weightVal;
+              }
+              const uom = p.metafields?.uom || "";
+              const finalUspLabel = p.usp_label || (finalUsp > 0 ? `₹${finalUsp.toFixed(2)}${uom ? "/" + uom : ""}` : null);
+
               return {
                 name: p.name || "Unknown",
                 alias: p.alias || null,
@@ -345,8 +356,8 @@ async function checkAvailability(pincode) {
                   ? `₹${p.price}`
                   : "N/A",
                 mrpRaw: Number(p.mrp) || null,
-                usp: Number(p.usp) || null,
-                uspLabel: p.usp_label || (p.usp ? `₹${Number(p.usp).toFixed(2)}` : null),
+                usp: finalUsp || null,
+                uspLabel: finalUspLabel || null,
                 inStock:
                   p.available === true ||
                   Number(p.inventory_quantity || 0) > 0,
