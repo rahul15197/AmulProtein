@@ -1,0 +1,96 @@
+name: Daily Amul Protein Stock Check
+
+on:
+  # Run on a schedule — default 09:00 IST = 03:30 UTC
+  # This is the DEFAULT time. The bot will change this file when /settime is used
+  # IST is UTC+5:30, so IST 09:00 = UTC 03:30
+  schedule:
+    - cron: "30 2 * * *"
+
+  # Allow manual trigger from GitHub UI
+  workflow_dispatch:
+    inputs:
+      pincode:
+        description: "Pincode to check (overrides stored config)"
+        required: false
+        default: ""
+
+jobs:
+  check-stock:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        run: npx playwright install chromium --with-deps
+
+      - name: Run stock check
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          DEFAULT_PINCODE: ${{ secrets.DEFAULT_PINCODE }}
+          OVERRIDE_PINCODE: ${{ github.event.inputs.pincode }}
+        run: |
+          node -e "
+          require('dotenv').config();
+          const { checkAvailability, formatReport } = require('./src/scraper');
+          const https = require('https');
+
+          const pincode = process.env.OVERRIDE_PINCODE || process.env.DEFAULT_PINCODE || '400001';
+          const botToken = process.env.TELEGRAM_BOT_TOKEN;
+          const chatId = process.env.TELEGRAM_CHAT_ID;
+
+          function sendTelegram(text) {
+            return new Promise((resolve, reject) => {
+              const body = JSON.stringify({
+                chat_id: chatId,
+                text,
+                parse_mode: 'HTML',
+                disable_web_page_preview: true
+              });
+              const options = {
+                hostname: 'api.telegram.org',
+                path: '/bot' + botToken + '/sendMessage',
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Content-Length': Buffer.byteLength(body)
+                }
+              };
+              const req = https.request(options, (res) => {
+                let data = '';
+                res.on('data', d => data += d);
+                res.on('end', () => resolve(JSON.parse(data)));
+              });
+              req.on('error', reject);
+              req.write(body);
+              req.end();
+            });
+          }
+
+          checkAvailability(pincode).then(async (result) => {
+            const report = formatReport(result);
+            console.log(report);
+            if (botToken && chatId) {
+              await sendTelegram(report);
+              console.log('Report sent to Telegram!');
+            } else {
+              console.log('No Telegram credentials — skipping send.');
+            }
+          }).catch(err => {
+            console.error('Check failed:', err.message);
+            process.exit(1);
+          });
+          "

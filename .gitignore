@@ -1,0 +1,11 @@
+node_modules/
+.env
+data/*.json
+!data/knownProducts.json
+# You might want to keep knownProducts.json to avoid duplicate alerts on fresh clone, 
+# but users.json should definitely be ignored to protect user privacy.
+data/users.json
+*.xlsx
+dist/
+build/
+.DS_Store
